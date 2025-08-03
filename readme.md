@@ -45,7 +45,7 @@ This repository contains two AI implementations for playing Connect 4:
 ```bash
 cd scripts
 ```
-3. Compile and run the Connect 4 game against different algorithms
+3. Compile and run the Connect 4 game using different algorithms
 ```bash
 g++ minimax.c++ -o minimax.exe
 ```
