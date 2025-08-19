@@ -663,7 +663,7 @@ def main():
                             show_computer_thinking_strip(screen, board)
                             pg.display.update()
                             cmp_col = None
-                            pred = os.system(f"scripts\\montecarlo.exe {board.cmpBitBoard} {board.hmnBitBoard} {500}")
+                            pred = os.system(f"montecarlo.exe {board.cmpBitBoard} {board.hmnBitBoard} {500}")
                             board_copy = copy.deepcopy(board)
                             board_copy.addPieceCmp(pred)
                             board_copy2 = copy.deepcopy(board)
@@ -675,7 +675,7 @@ def main():
                                     valid_cols = [c for c in range(width) if board.numPieces[c] < board.height]
                                     cmp_col = random.choice(valid_cols)
                                 else:
-                                    cmp_col = os.system(f"scripts\\montecarlo.exe {board.cmpBitBoard} {board.hmnBitBoard} {allowedMS}")
+                                    cmp_col = os.system(f"montecarlo.exe {board.cmpBitBoard} {board.hmnBitBoard} {allowedMS}")
                             if animate_drop(board, cmp_col, True, screen, player_turn=1):
                                 placed += 1
                                 grace[0] = 10
