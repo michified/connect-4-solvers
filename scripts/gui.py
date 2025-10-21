@@ -296,6 +296,18 @@ def set_difficulty_slider(val):
         t = (val - 75) / 25
         allowedMS = int(10 * (1000 ** t))
 
+def rematch():
+    global board, placed, last_column, player_turn, game_started, need_redraw, grace, currentFrame
+    # Reset board and counters
+    board = BoardState()
+    placed = 0
+    last_column = -1
+    need_redraw = True
+    grace = [0]
+    game_started = False
+    target = prevFrame[-1] if prevFrame else "menu"
+    change_frame(target)
+
 # --- Drawing Functions ---
 def render_screen(board=None, animating_piece=None, current_col=None, player_turn=None, is_computer_game=False):
     global currentFrame, transitionPos
@@ -512,7 +524,7 @@ frames = {
     },
     "endscreen": {
         "buttons": [
-            Button("Play Again", (50, 150), (250, 60), action=None, frame="choosegamemode"),
+            Button("Play Again", (50, 150), (250, 60), action=rematch, frame=None),
             Button("Main Menu", (50, 230), (250, 60), action=None, frame="menu"),
             Button("Reset Score", (50, 310), (250, 60), action=reset_scores, frame="endscreen"),
             Button("Exit", (50, 390), (250, 60), action=None, frame="quitscreen")
@@ -554,7 +566,6 @@ frames = {
     },
 }
 
-# Patch the slider to update difficulty on click
 for btn in frames["selectdifficulty"]["buttons"]:
     if isinstance(btn, Slider):
         btn.action = lambda b=btn: set_difficulty_slider(b.value)
@@ -563,71 +574,116 @@ def on_button_press():
     global transitionPos
     transitionPos = 0
 
-# --- Main Loop ---
-def main():
-    global player1_score, player2_score, transitionPos
-    global pending_frame_change, pending_frame_args, frame_changed_this_transition
-    font = pg.font.SysFont("monospace", 30)
-    gameOver = False
-    prevCoords = (-1, -1)
-    last_column = -1
-    global currentFrame, prevFrame, first_player
-    need_redraw = True
-    player_turn = 0
-    board = BoardState()
-    placed = 0
-    game_started = False
-    grace = [0]
-    prev_frame = None
+font = pg.font.SysFont("monospace", 30)
+gameOver = False
+last_column = -1
+need_redraw = True
+player_turn = 0
+board = BoardState()
+placed = 0
+game_started = False
+grace = [0]
+prev_frame = None
 
-    while not gameOver:
-        if transitionPos >= 0:
-            transitionPos += 20
-            pg.time.Clock().tick(240)
-            if transitionPos >= 2 * WINDOWWIDTH:
-                transitionPos = -1
-                frame_changed_this_transition = False
+while not gameOver:
+    if transitionPos >= 0:
+        transitionPos += 20
+        pg.time.Clock().tick(240)
+        if transitionPos >= 2 * WINDOWWIDTH:
+            transitionPos = -1
+            frame_changed_this_transition = False
+        render_screen(board)
+
+    if currentFrame == "menu" and prev_frame == "forfeit":
+        board = BoardState()
+        placed = 0
+        last_column = -1
+        player_turn = 0
+        game_started = False
+        need_redraw = True
+    prev_frame = currentFrame
+
+    if currentFrame == "gamebot":
+        if not game_started:
+            if first_player == 'computer':
+                col = 3
+                if animate_drop(board, col, True, screen, player_turn=1, grace_ref=[grace]):
+                    placed += 1
+            game_started = True
+        if need_redraw:
             render_screen(board)
-
-        if currentFrame == "menu" and prev_frame == "forfeit":
-            board = BoardState()
-            placed = 0
-            last_column = -1
-            player_turn = 0
-            game_started = False
-            need_redraw = True
-        prev_frame = currentFrame
-
-        if currentFrame == "gamebot":
-            if not game_started:
-                if first_player == 'computer':
-                    col = 3
-                    if animate_drop(board, col, True, screen, player_turn=1, grace_ref=[grace]):
+            need_redraw = False
+        for event in pg.event.get():
+            if grace[0] > 0:
+                continue
+            if event.type == pg.MOUSEMOTION:
+                curCol = event.pos[0] // SQUARESIZE
+                if curCol != last_column and 0 <= curCol < width:
+                    render_screen(board, None, curCol, 0)
+                    last_column = curCol
+            if event.type == pg.QUIT:
+                sys.exit()
+            if event.type == pg.MOUSEBUTTONDOWN:
+                mouse_pos = pg.mouse.get_pos()
+                for button in frames[currentFrame]["buttons"]:
+                    if button.rect.collidepoint(mouse_pos):
+                        button.check_click(mouse_pos)
+                        break
+                else:
+                    col = mouse_pos[0] // SQUARESIZE
+                    if animate_drop(board, col, False, screen, player_turn=0, grace_ref=grace):
                         placed += 1
-                game_started = True
-            if need_redraw:
-                render_screen(board)
-                need_redraw = False
-            for event in pg.event.get():
-                if grace[0] > 0:
-                    continue
-                if event.type == pg.MOUSEMOTION:
-                    curCol = event.pos[0] // SQUARESIZE
-                    if curCol != last_column and 0 <= curCol < width:
-                        render_screen(board, None, curCol, 0)
-                        last_column = curCol
-                if event.type == pg.QUIT:
-                    sys.exit()
-                if event.type == pg.MOUSEBUTTONDOWN:
-                    mouse_pos = pg.mouse.get_pos()
-                    for button in frames[currentFrame]["buttons"]:
-                        if button.rect.collidepoint(mouse_pos):
-                            button.check_click(mouse_pos)
+                        if board.isWin() or placed == width * height:
+                            winner = board.isWin()
+                            strip_height = 80
+                            strip_rect = pg.Rect(0, WINDOWHEIGHT // 2 - strip_height // 2, WINDOWWIDTH, strip_height)
+                            pg.draw.rect(screen, (0,0,0), strip_rect)
+                            winner_color = colorSchemes[currentTheme]["text"] if currentTheme != "greyscale" else WHITE
+                            if winner == 1:
+                                label = font.render("You Lost...", True, winner_color)
+                                player2_score += 1
+                            elif winner == -1:
+                                label = font.render("You win!", True, winner_color)
+                                player1_score += 1
+                            else:
+                                label = font.render("Tie!", True, winner_color)
+                            score_rect = pg.Rect(WINDOWWIDTH // 2 - 200, 110, 400, 40)
+                            pg.draw.rect(screen, colorSchemes[currentTheme]["background"], score_rect)
+                            label_rect = label.get_rect(center=(WINDOWWIDTH // 2, WINDOWHEIGHT // 2))
+                            screen.blit(label, label_rect)
+                            pg.display.flip()
+                            pg.time.wait(3000)
+                            for i in range(WINDOWWIDTH):
+                                pg.draw.rect(screen, colorSchemes[currentTheme]["background"], (i - WINDOWWIDTH, 0, i, WINDOWHEIGHT))
+                                pg.display.flip()
+                            currentFrame = "endscreen"
+                            board = BoardState()
+                            for i in range(WINDOWWIDTH, 2 * WINDOWWIDTH, 5):
+                                render_screen()
+                                pg.draw.rect(screen, colorSchemes[currentTheme]["background"], (i - WINDOWWIDTH, 0, i, WINDOWHEIGHT))
+                                pg.display.flip()
+                            placed = 0
                             break
-                    else:
-                        col = mouse_pos[0] // SQUARESIZE
-                        if animate_drop(board, col, False, screen, player_turn=0, grace_ref=grace):
+                        render_screen()
+                        show_computer_thinking_strip(screen, board)
+                        pg.display.update()
+                        cmp_col = None
+                        pred = os.system(f"montecarlo.exe {board.cmpBitBoard} {board.hmnBitBoard} {500}")
+                        board_copy = copy.deepcopy(board)
+                        board_copy.addPieceCmp(pred)
+                        board_copy2 = copy.deepcopy(board)
+                        board_copy2.addPieceHmn(pred)
+                        if board_copy.isWin() != 0 or board_copy2.isWin() != 0:
+                            cmp_col = pred
+                        else:
+                            if randomness > 0 and random.randint(1, 100) <= randomness:
+                                valid_cols = [c for c in range(width) if board.numPieces[c] < board.height]
+                                cmp_col = random.choice(valid_cols)
+                            else:
+                                cmp_col = os.system(f"montecarlo.exe {board.cmpBitBoard} {board.hmnBitBoard} {allowedMS}")
+                        if animate_drop(board, cmp_col, True, screen, player_turn=1):
                             placed += 1
+                            grace[0] = 10
                             if board.isWin() or placed == width * height:
                                 winner = board.isWin()
                                 strip_height = 80
@@ -659,147 +715,94 @@ def main():
                                     pg.display.flip()
                                 placed = 0
                                 break
-                            render_screen()
-                            show_computer_thinking_strip(screen, board)
-                            pg.display.update()
-                            cmp_col = None
-                            pred = os.system(f"montecarlo.exe {board.cmpBitBoard} {board.hmnBitBoard} {500}")
-                            board_copy = copy.deepcopy(board)
-                            board_copy.addPieceCmp(pred)
-                            board_copy2 = copy.deepcopy(board)
-                            board_copy2.addPieceHmn(pred)
-                            if board_copy.isWin() != 0 or board_copy2.isWin() != 0:
-                                cmp_col = pred
-                            else:
-                                if randomness > 0 and random.randint(1, 100) <= randomness:
-                                    valid_cols = [c for c in range(width) if board.numPieces[c] < board.height]
-                                    cmp_col = random.choice(valid_cols)
-                                else:
-                                    cmp_col = os.system(f"montecarlo.exe {board.cmpBitBoard} {board.hmnBitBoard} {allowedMS}")
-                            if animate_drop(board, cmp_col, True, screen, player_turn=1):
-                                placed += 1
-                                grace[0] = 10
-                                if board.isWin() or placed == width * height:
-                                    winner = board.isWin()
-                                    strip_height = 80
-                                    strip_rect = pg.Rect(0, WINDOWHEIGHT // 2 - strip_height // 2, WINDOWWIDTH, strip_height)
-                                    pg.draw.rect(screen, (0,0,0), strip_rect)
-                                    winner_color = colorSchemes[currentTheme]["text"] if currentTheme != "greyscale" else WHITE
-                                    if winner == 1:
-                                        label = font.render("You Lost...", True, winner_color)
-                                        player2_score += 1
-                                    elif winner == -1:
-                                        label = font.render("You win!", True, winner_color)
-                                        player1_score += 1
-                                    else:
-                                        label = font.render("Tie!", True, winner_color)
-                                    score_rect = pg.Rect(WINDOWWIDTH // 2 - 200, 110, 400, 40)
-                                    pg.draw.rect(screen, colorSchemes[currentTheme]["background"], score_rect)
-                                    label_rect = label.get_rect(center=(WINDOWWIDTH // 2, WINDOWHEIGHT // 2))
-                                    screen.blit(label, label_rect)
-                                    pg.display.flip()
-                                    pg.time.wait(3000)
-                                    for i in range(WINDOWWIDTH):
-                                        pg.draw.rect(screen, colorSchemes[currentTheme]["background"], (i - WINDOWWIDTH, 0, i, WINDOWHEIGHT))
-                                        pg.display.flip()
-                                    currentFrame = "endscreen"
-                                    board = BoardState()
-                                    for i in range(WINDOWWIDTH, 2 * WINDOWWIDTH, 5):
-                                        render_screen()
-                                        pg.draw.rect(screen, colorSchemes[currentTheme]["background"], (i - WINDOWWIDTH, 0, i, WINDOWHEIGHT))
-                                        pg.display.flip()
-                                    placed = 0
-                                    break
-            if grace[0] > 0:
-                grace[0] -= 1
+        if grace[0] > 0:
+            grace[0] -= 1
 
-        elif currentFrame == "gamehmn":
-            if not game_started:
-                player_turn = 0 if first_player == 'player1' else 1
-                game_started = True
-            if need_redraw:
-                render_screen(board)
-                need_redraw = False
-            for event in pg.event.get():
-                if grace[0] > 0:
-                    continue
-                if event.type == pg.MOUSEMOTION:
-                    curCol = event.pos[0] // SQUARESIZE
-                    if curCol != last_column and 0 <= curCol < width:
-                        render_screen(board, None, curCol, player_turn, False)
-                        last_column = curCol
-                if event.type == pg.QUIT:
-                    sys.exit()
-                if event.type == pg.MOUSEBUTTONDOWN:
-                    mouse_pos = pg.mouse.get_pos()
-                    for button in frames[currentFrame]["buttons"]:
-                        if button.rect.collidepoint(mouse_pos):
-                            button.check_click(mouse_pos)
-                            break
-                    else:
-                        col = mouse_pos[0] // SQUARESIZE
-                        if animate_drop(board, col, player_turn == 1, screen, player_turn, grace_ref=grace):
-                            placed += 1
-                            if board.isWin() or placed == width * height:
-                                winner = board.isWin()
-                                strip_height = 80
-                                strip_rect = pg.Rect(0, WINDOWHEIGHT // 2 - strip_height // 2, WINDOWWIDTH, strip_height)
-                                pg.draw.rect(screen, (0,0,0), strip_rect)
-                                winner_color = colorSchemes[currentTheme]["text"] if currentTheme != "greyscale" else WHITE
-                                if winner == 1:
-                                    label = font.render("Player 2 Wins!", True, winner_color)
-                                    player2_score += 1
-                                elif winner == -1:
-                                    label = font.render("Player 1 Wins!", True, winner_color)
-                                    player1_score += 1
-                                else:
-                                    label = font.render("Tie!", True, winner_color)
-                                score_rect = pg.Rect(WINDOWWIDTH // 2 - 200, 110, 400, 40)
-                                pg.draw.rect(screen, colorSchemes[currentTheme]["background"], score_rect)
-                                label_rect = label.get_rect(center=(WINDOWWIDTH // 2, WINDOWHEIGHT // 2))
-                                screen.blit(label, label_rect)
-                                pg.display.flip()
-                                pg.time.wait(3000)
-                                for i in range(0, WINDOWWIDTH, 1):
-                                    pg.draw.rect(screen, colorSchemes[currentTheme]["background"], (i - WINDOWWIDTH, 0, i, WINDOWHEIGHT))
-                                    pg.display.flip()
-                                currentFrame = "endscreen"
-                                board = BoardState()
-                                for i in range(WINDOWWIDTH, 2 * WINDOWWIDTH, 5):
-                                    render_screen()
-                                    pg.draw.rect(screen, colorSchemes[currentTheme]["background"], (i - WINDOWWIDTH, 0, i, WINDOWHEIGHT))
-                                    pg.display.flip()
-                                placed = 0
-                                break
-                            player_turn = 1 - player_turn
+    elif currentFrame == "gamehmn":
+        if not game_started:
+            player_turn = 0 if first_player == 'player1' else 1
+            game_started = True
+        if need_redraw:
+            render_screen(board)
+            need_redraw = False
+        for event in pg.event.get():
             if grace[0] > 0:
-                grace[0] -= 1
-        else:
-            render_screen()
-            for event in pg.event.get():
-                if event.type == pg.QUIT:
-                    sys.exit()
-                elif event.type == pg.MOUSEBUTTONDOWN:
-                    mouse_pos = pg.mouse.get_pos()
-                    for button in frames[currentFrame]["buttons"]:
+                continue
+            if event.type == pg.MOUSEMOTION:
+                curCol = event.pos[0] // SQUARESIZE
+                if curCol != last_column and 0 <= curCol < width:
+                    render_screen(board, None, curCol, player_turn, False)
+                    last_column = curCol
+            if event.type == pg.QUIT:
+                sys.exit()
+            if event.type == pg.MOUSEBUTTONDOWN:
+                mouse_pos = pg.mouse.get_pos()
+                for button in frames[currentFrame]["buttons"]:
+                    if button.rect.collidepoint(mouse_pos):
                         button.check_click(mouse_pos)
-                elif event.type in (pg.MOUSEBUTTONUP, pg.MOUSEMOTION):
-                    for button in frames[currentFrame]["buttons"]:
-                        if isinstance(button, Slider):
-                            button.handle_event(event)
-        mouse_pos = pg.mouse.get_pos()
-        for button in frames.get(currentFrame, {}).get("buttons", []):
-            if hasattr(button, "update_hover"):
-                button.update_hover(mouse_pos)
-        if (
-            pending_frame_change is not None and
-            transitionPos >= WINDOWWIDTH and transitionPos < 2 * WINDOWWIDTH and
-            not frame_changed_this_transition
-        ):
-            if pending_frame_change == "__BACK__":
-                change_frame(back=True)
-            else:
-                change_frame(pending_frame_change, **pending_frame_args)
-            frame_changed_this_transition = True
-
-main()
+                        break
+                else:
+                    col = mouse_pos[0] // SQUARESIZE
+                    if animate_drop(board, col, player_turn == 1, screen, player_turn, grace_ref=grace):
+                        placed += 1
+                        if board.isWin() or placed == width * height:
+                            winner = board.isWin()
+                            strip_height = 80
+                            strip_rect = pg.Rect(0, WINDOWHEIGHT // 2 - strip_height // 2, WINDOWWIDTH, strip_height)
+                            pg.draw.rect(screen, (0,0,0), strip_rect)
+                            winner_color = colorSchemes[currentTheme]["text"] if currentTheme != "greyscale" else WHITE
+                            if winner == 1:
+                                label = font.render("Player 2 Wins!", True, winner_color)
+                                player2_score += 1
+                            elif winner == -1:
+                                label = font.render("Player 1 Wins!", True, winner_color)
+                                player1_score += 1
+                            else:
+                                label = font.render("Tie!", True, winner_color)
+                            score_rect = pg.Rect(WINDOWWIDTH // 2 - 200, 110, 400, 40)
+                            pg.draw.rect(screen, colorSchemes[currentTheme]["background"], score_rect)
+                            label_rect = label.get_rect(center=(WINDOWWIDTH // 2, WINDOWHEIGHT // 2))
+                            screen.blit(label, label_rect)
+                            pg.display.flip()
+                            pg.time.wait(3000)
+                            for i in range(0, WINDOWWIDTH, 1):
+                                pg.draw.rect(screen, colorSchemes[currentTheme]["background"], (i - WINDOWWIDTH, 0, i, WINDOWHEIGHT))
+                                pg.display.flip()
+                            currentFrame = "endscreen"
+                            board = BoardState()
+                            for i in range(WINDOWWIDTH, 2 * WINDOWWIDTH, 5):
+                                render_screen()
+                                pg.draw.rect(screen, colorSchemes[currentTheme]["background"], (i - WINDOWWIDTH, 0, i, WINDOWHEIGHT))
+                                pg.display.flip()
+                            placed = 0
+                            break
+                        player_turn = 1 - player_turn
+        if grace[0] > 0:
+            grace[0] -= 1
+    else:
+        render_screen()
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                sys.exit()
+            elif event.type == pg.MOUSEBUTTONDOWN:
+                mouse_pos = pg.mouse.get_pos()
+                for button in frames[currentFrame]["buttons"]:
+                    button.check_click(mouse_pos)
+            elif event.type in (pg.MOUSEBUTTONUP, pg.MOUSEMOTION):
+                for button in frames[currentFrame]["buttons"]:
+                    if isinstance(button, Slider):
+                        button.handle_event(event)
+    mouse_pos = pg.mouse.get_pos()
+    for button in frames.get(currentFrame, {}).get("buttons", []):
+        if hasattr(button, "update_hover"):
+            button.update_hover(mouse_pos)
+    if (
+        pending_frame_change is not None and
+        transitionPos >= WINDOWWIDTH and transitionPos < 2 * WINDOWWIDTH and
+        not frame_changed_this_transition
+    ):
+        if pending_frame_change == "__BACK__":
+            change_frame(back=True)
+        else:
+            change_frame(pending_frame_change, **pending_frame_args)
+        frame_changed_this_transition = True
