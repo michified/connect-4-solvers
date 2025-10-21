@@ -78,7 +78,8 @@ class Button:
     def check_click(self, mouse_pos):
         global pending_frame_change, pending_frame_args
         if self.rect.collidepoint(mouse_pos):
-            on_button_press()
+            global transitionPos
+            transitionPos = 0
             if self.action:
                 self.action()
             if self.back:
@@ -243,10 +244,12 @@ fonts = {
 
 currentTheme = "default"
 currentFrame = "menu"
+prevGameType = None
 prevFrame = []
 pending_frame_change = None
 pending_frame_args = {}
 frame_changed_this_transition = False
+rematch_pending = False
 
 # --- Utility Functions ---
 def get_theme_font(size=24):
@@ -297,16 +300,13 @@ def set_difficulty_slider(val):
         allowedMS = int(10 * (1000 ** t))
 
 def rematch():
-    global board, placed, last_column, player_turn, game_started, need_redraw, grace, currentFrame
-    # Reset board and counters
-    board = BoardState()
-    placed = 0
-    last_column = -1
-    need_redraw = True
-    grace = [0]
-    game_started = False
-    target = prevFrame[-1] if prevFrame else "menu"
-    change_frame(target)
+    # Schedule a rematch so the transition animation runs, the frame changes during the transition,
+    # and the board/state reset happens when the frame is applied.
+    global pending_frame_change, pending_frame_args, rematch_pending, prevGameType
+    target = prevGameType if prevGameType else "menu"
+    pending_frame_change = target
+    pending_frame_args = {"back": False, "theme": None}
+    rematch_pending = True
 
 # --- Drawing Functions ---
 def render_screen(board=None, animating_piece=None, current_col=None, player_turn=None, is_computer_game=False):
@@ -469,6 +469,10 @@ first_player = None
 allowedMS = 0
 randomness = 100
 
+def setPrevGame(type):
+    global prevGameType
+    prevGameType = type
+
 frames = {
     "menu": {
         "text": "Welcome to Connect Four!\nChoose an option below to start playing.",
@@ -483,8 +487,8 @@ frames = {
     "choosegamemode": {
         "text": "How many players?",
         "buttons": [
-            Button("1 Player", (50, 150), (250, 60), action=None, frame="choosefirst_single"),
-            Button("2 Players", (50, 220), (250, 60), action=None, frame="choosefirst_multi"),
+            Button("1 Player", (50, 150), (250, 60), action=setPrevGame("gamebot"), frame="choosefirst_single"),
+            Button("2 Players", (50, 220), (250, 60), action=setPrevGame("gamehmn"), frame="choosefirst_multi"),
             Button("Back", (50, 290), (200, 50), action=None, back=True)
         ]
     },
@@ -569,10 +573,6 @@ frames = {
 for btn in frames["selectdifficulty"]["buttons"]:
     if isinstance(btn, Slider):
         btn.action = lambda b=btn: set_difficulty_slider(b.value)
-    
-def on_button_press():
-    global transitionPos
-    transitionPos = 0
 
 font = pg.font.SysFont("monospace", 30)
 gameOver = False
@@ -805,4 +805,14 @@ while not gameOver:
             change_frame(back=True)
         else:
             change_frame(pending_frame_change, **pending_frame_args)
+        # If a rematch was scheduled, reset the game state now that the frame has been changed
+        if rematch_pending:
+            # reset board and counters
+            board = BoardState()
+            placed = 0
+            last_column = -1
+            need_redraw = True
+            grace = [0]
+            game_started = False
+            rematch_pending = False
         frame_changed_this_transition = True
