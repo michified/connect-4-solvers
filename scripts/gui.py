@@ -300,12 +300,11 @@ def set_difficulty_slider(val):
         allowedMS = int(10 * (1000 ** t))
 
 def rematch():
-    # Schedule a rematch so the transition animation runs, the frame changes during the transition,
-    # and the board/state reset happens when the frame is applied.
     global pending_frame_change, pending_frame_args, rematch_pending, prevGameType
     target = prevGameType if prevGameType else "menu"
     pending_frame_change = target
     pending_frame_args = {"back": False, "theme": None}
+    
     rematch_pending = True
 
 # --- Drawing Functions ---
@@ -487,8 +486,8 @@ frames = {
     "choosegamemode": {
         "text": "How many players?",
         "buttons": [
-            Button("1 Player", (50, 150), (250, 60), action=setPrevGame("gamebot"), frame="choosefirst_single"),
-            Button("2 Players", (50, 220), (250, 60), action=setPrevGame("gamehmn"), frame="choosefirst_multi"),
+            Button("1 Player", (50, 150), (250, 60), action=lambda: setPrevGame("gamebot"), frame="choosefirst_single"),
+            Button("2 Players", (50, 220), (250, 60), action=lambda: setPrevGame("gamehmn"), frame="choosefirst_multi"),
             Button("Back", (50, 290), (200, 50), action=None, back=True)
         ]
     },
@@ -814,5 +813,13 @@ while not gameOver:
             need_redraw = True
             grace = [0]
             game_started = False
+            player_turn = 0
+            # If rematching in single player mode and computer goes first, place computer's first move in col 3
+            if currentFrame == "gamebot" and first_player == 'computer':
+                col = 3
+                if animate_drop(board, col, True, screen, player_turn=1, grace_ref=[grace]):
+                    placed += 1
+                game_started = True
+                player_turn = 0
             rematch_pending = False
         frame_changed_this_transition = True
